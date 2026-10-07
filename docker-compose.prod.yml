@@ -1,0 +1,26 @@
+# Production overrides, used on the EC2 server together with docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Images are built on the server and tagged with the release (commit SHA), so
+# each deploy is traceable and the last few releases stay on disk.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    <<: *logging
+  middleware:
+    image: ngtc-todo/middleware:${RELEASE:-latest}
+    <<: *logging
+  worker:
+    image: ngtc-todo/worker:${RELEASE:-latest}
+    <<: *logging
+  frontend:
+    image: ngtc-todo/frontend:${RELEASE:-latest}
+    <<: *logging
+  oauth2-proxy:
+    <<: *logging

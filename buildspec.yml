@@ -1,0 +1,68 @@
+# CodeBuild project: ngtc-todo-build   (pipeline stage: Build)
+#
+# Lints and unit-tests every service, proves each Docker image builds, and
+# outputs the deployable bundle (BuildArtifact) used by the Deploy stage.
+#
+# Requires: privileged mode ON (Docker). Every tool runs inside its official
+# Docker image, so nothing has to be installed on the build host. Sources are
+# copied into the containers, so the workspace stays clean for the artifact.
+version: 0.2
+
+env:
+  variables:
+    DOCKER_BUILDKIT: "1"
+
+phases:
+  build:
+    commands:
+      - echo "== middleware - ruff lint/format + pytest"
+      - >
+        docker run --rm -v "$PWD/middleware":/src:ro python:3.12-slim sh -ec
+        "cp -r /src /work && cd /work
+        && pip install -q --root-user-action=ignore -r requirements-dev.txt
+        && ruff check . && ruff format --check . && pytest -q"
+
+      - echo "== frontend - type-check + production build"
+      - >
+        docker run --rm -v "$PWD/frontend":/src:ro node:22-alpine sh -ec
+        "cp -r /src /work && cd /work
+        && npm ci --no-audit --no-fund && npm run build"
+
+      - echo "== worker - rustfmt + clippy + cargo test"
+      - >
+        docker run --rm -v "$PWD/worker-rust":/src:ro rust:1 sh -ec
+        "cp -r /src /work && cd /work
+        && rustup component add rustfmt clippy
+        && cargo fmt --check
+        && cargo clippy --all-targets --locked -- -D warnings
+        && cargo test --locked"
+
+      - echo "== docker images build"
+      - docker build -t ngtc-todo/middleware:ci middleware
+      - docker build -t ngtc-todo/frontend:ci frontend
+      - docker build -t ngtc-todo/worker:ci worker-rust
+
+  post_build:
+    commands:
+      # Record which commit this bundle is, so the server can tag images with it.
+      - echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-unknown}" | cut -c1-7 > RELEASE
+      - echo "Release $(cat RELEASE)"
+
+artifacts:
+  # Only what the EC2 server needs to build and run the app.
+  files:
+    - RELEASE
+    - appspec.yml
+    - docker-compose.yml
+    - docker-compose.prod.yml
+    - deploy/**/*
+    - db/**/*
+    - middleware/**/*
+    - frontend/**/*
+    - worker-rust/**/*
+  exclude-paths:
+    - middleware/tests/**/*
+    - "**/node_modules/**/*"
+    - "**/.next/**/*"
+    - "**/target/**/*"
+    - "**/.venv/**/*"

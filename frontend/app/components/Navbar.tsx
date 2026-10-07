@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import GitHubIcon from "./GitHubIcon";
+import ThemeToggle from "./ThemeToggle";
 import {
   SIGN_IN_URL,
   SIGN_OUT_URL,
@@ -110,6 +111,7 @@ export default function Navbar() {
         </Link>
 
         <div className="nav-right">
+          <ThemeToggle />
           {session.status === "authenticated" && (
             <>
               <Link href="/todos" className="nav-link">

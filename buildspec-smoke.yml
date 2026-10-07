@@ -1,0 +1,22 @@
+# CodeBuild project: ngtc-todo-smoke   (pipeline stage: Test)
+#
+# Starts the whole stack with Docker Compose and runs end-to-end checks
+# (see ci/smoke-test.sh). Requires: privileged mode ON (Docker).
+version: 0.2
+
+phases:
+  install:
+    commands:
+      # Use the Compose plugin if the build image has it, otherwise install it.
+      - |
+        if ! docker compose version >/dev/null 2>&1; then
+          mkdir -p ~/.docker/cli-plugins
+          curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+            -o ~/.docker/cli-plugins/docker-compose
+          chmod +x ~/.docker/cli-plugins/docker-compose
+        fi
+      - docker compose version
+
+  build:
+    commands:
+      - bash ci/smoke-test.sh

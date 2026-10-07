@@ -1,0 +1,32 @@
+# CodeDeploy (EC2) - pipeline stage: Deploy
+#
+# Copies the build bundle to /opt/ngtc-todo/app, then runs the lifecycle hooks:
+#   BeforeInstall    check Docker/AWS CLI are present, clear the old bundle
+#   AfterInstall     load secrets from SSM Parameter Store, build images
+#   ApplicationStart docker compose up -d
+#   ValidateService  wait until healthy; a failure here triggers rollback
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /opt/ngtc-todo/app
+file_exists_behavior: OVERWRITE
+
+hooks:
+  BeforeInstall:
+    - location: deploy/before_install.sh
+      timeout: 300
+      runas: root
+  AfterInstall:
+    - location: deploy/after_install.sh
+      timeout: 1800
+      runas: root
+  ApplicationStart:
+    - location: deploy/start.sh
+      timeout: 600
+      runas: root
+  ValidateService:
+    - location: deploy/validate.sh
+      timeout: 300
+      runas: root
