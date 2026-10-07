@@ -33,6 +33,8 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [workerReply, setWorkerReply] = useState<string | null>(null);
+  const [callingWorker, setCallingWorker] = useState(false);
 
   const run = useCallback(async (action: () => Promise<void>) => {
     setError(null);
@@ -78,13 +80,30 @@ export default function Home() {
       setTodos((prev) => prev.filter((t) => t.id !== todo.id));
     });
 
+  const callWorker = () => {
+    setCallingWorker(true);
+    run(async () => {
+      const res = await api<{ message: string }>("/hello");
+      setWorkerReply(res.message);
+    }).finally(() => setCallingWorker(false));
+  };
+
   const remaining = todos.filter((t) => !t.done).length;
 
   return (
     <main className="container">
       <header className="header">
         <h1>My todos</h1>
+        <button className="btn-secondary" onClick={callWorker} disabled={callingWorker}>
+          {callingWorker ? "Calling…" : "Call Rust worker"}
+        </button>
       </header>
+
+      {workerReply && (
+        <p className="worker-reply">
+          <span className="muted">Rust worker says:</span> {workerReply}
+        </p>
+      )}
 
       <form className="add-form" onSubmit={addTodo}>
         <input

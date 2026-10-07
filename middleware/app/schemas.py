@@ -23,3 +23,8 @@ class TodoOut(BaseModel):
 
 class UserOut(BaseModel):
     user: str
+
+
+class HelloOut(BaseModel):
+    message: str
+    source: str

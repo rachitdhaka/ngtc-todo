@@ -133,6 +133,27 @@ button:disabled {
 
 /* ---------- buttons ---------- */
 
+.btn-secondary {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg);
+}
+
+.worker-reply {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

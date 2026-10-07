@@ -1,12 +1,15 @@
 # Todo App
 
-A simple todo application split into four containers, protected by OAuth.
+A simple todo application split into five containers, protected by OAuth.
 
 ```
 Browser ──► oauth2-proxy :4180 ──► frontend (Next.js) ──► middleware (FastAPI) ──► db (PostgreSQL)
                  │                  /api/* proxied        reads X-Forwarded-Email
-                 ▼
-        GitHub / Google (OAuth provider)
+                 ▼                                              │ GET /api/hello
+        GitHub / Google (OAuth provider)                        │ DELETE /api/todos/{id}
+                                                                ▼
+                                                        worker (Rust, axum) ──► db
+                                                        "hello world from Rust"
 ```
 
 | Route      | Access  | What |
@@ -27,6 +30,7 @@ internal Docker network, so the login cannot be bypassed.
 | `oauth2-proxy` | oauth2-proxy v7.15         | (compose only) | `localhost:4180` |
 | `frontend`   | Next.js 16 / React 19        | `frontend/`    | no |
 | `middleware` | Python 3.12, FastAPI, SQLAlchemy | `middleware/` | no |
+| `worker`     | Rust, axum (distroless image) | `worker-rust/` | no |
 | `db`         | PostgreSQL 16                | `db/init.sql`  | no |
 
 ## OAuth setup (one time)
@@ -55,10 +59,17 @@ Stop with `docker compose down` (add `-v` to also wipe the database volume).
 |--------|--------------------|------------------------------|
 | GET    | `/healthz`         | —                            |
 | GET    | `/api/me`          | —                            |
+| GET    | `/api/hello`       | — (calls the Rust worker; 502 if it is down) |
 | GET    | `/api/todos`       | —                            |
 | POST   | `/api/todos`       | `{"title": "..."}`           |
 | PATCH  | `/api/todos/{id}`  | `{"title"?: "...", "done"?: bool}` |
-| DELETE | `/api/todos/{id}`  | —                            |
+| DELETE | `/api/todos/{id}`  | — (**handled by the Rust worker**) |
+
+FastAPI creates, lists and updates todos. Deleting is delegated to the Rust
+worker: FastAPI authenticates the user, then calls `DELETE /todos/{id}` on the
+worker with an `X-User-Id` header, and the worker runs
+`DELETE FROM todos WHERE id = $1 AND user_id = $2` (204 deleted, 404 not found
+or not yours, 502 from FastAPI if the worker or DB is down).
 
 Todos are scoped by user, taken from the `X-Forwarded-Email` header that
 oauth2-proxy sets after login. In compose `REQUIRE_AUTH=true`, so a request with
@@ -72,6 +83,10 @@ cd middleware
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q && .venv/bin/ruff check .
 
+# worker (or use the rust:1-slim Docker image if cargo isn't installed)
+cd worker-rust
+cargo test
+
 # frontend (expects the API on localhost:8000, or set API_URL)
 cd frontend
 npm install && npm run dev
@@ -81,5 +96,5 @@ npm install && npm run dev
 
 - [x] Frontend, middleware, database as separate containers
 - [x] OAuth: oauth2-proxy in front of the app, GitHub/Google as provider
-- [ ] Rust worker process behind `GET /api/hello`
+- [x] Rust worker process behind `GET /api/hello`
 - [ ] CI/CD pipeline (GitHub Actions → GHCR)

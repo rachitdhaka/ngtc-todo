@@ -23,8 +23,11 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD:-todo}@db:5432/${POSTGRES_DB:-todo}
       # Reject requests that did not come through oauth2-proxy with an identity.
       REQUIRE_AUTH: "true"
+      WORKER_URL: http://worker:8080
     depends_on:
       db:
+        condition: service_healthy
+      worker:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
@@ -32,6 +35,23 @@ services:
       timeout: 3s
       retries: 10
     # Not published to the host: only reachable from the frontend on the internal network.
+    restart: unless-stopped
+
+  worker:
+    build: ./worker-rust
+    environment:
+      # Used only for DELETE /todos/{id}; FastAPI does all other DB work.
+      DATABASE_URL: postgres://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD:-todo}@db:5432/${POSTGRES_DB:-todo}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # Distroless image has no shell/curl; the binary probes itself.
+      test: ["CMD", "/worker", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Internal only: reached by the middleware (GET /api/hello, DELETE /api/todos/{id}).
     restart: unless-stopped
 
   frontend:

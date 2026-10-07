@@ -1,15 +1,17 @@
 import os
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .db import get_session
 from .models import Todo
-from .schemas import TodoCreate, TodoOut, TodoUpdate, UserOut
+from .schemas import HelloOut, TodoCreate, TodoOut, TodoUpdate, UserOut
 
 REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
+WORKER_URL = os.getenv("WORKER_URL", "http://localhost:8080")
 
 app = FastAPI(title="Todo API", version="1.0.0")
 
@@ -49,6 +51,17 @@ def me(user: UserDep) -> UserOut:
     return UserOut(user=user)
 
 
+@app.get("/api/hello", response_model=HelloOut)
+def hello(user: UserDep) -> HelloOut:
+    # Delegates to the Rust worker process on the internal network.
+    try:
+        res = httpx.get(f"{WORKER_URL}/hello", timeout=3.0)
+        res.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Worker unavailable") from exc
+    return HelloOut(message=res.text, source="rust-worker")
+
+
 @app.get("/api/todos", response_model=list[TodoOut])
 def list_todos(session: SessionDep, user: UserDep) -> list[Todo]:
     stmt = select(Todo).where(Todo.user_id == user).order_by(Todo.id)
@@ -79,8 +92,18 @@ def update_todo(
 
 
 @app.delete("/api/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_todo(todo_id: int, session: SessionDep, user: UserDep) -> Response:
-    todo = get_owned_todo(session, todo_id, user)
-    session.delete(todo)
-    session.commit()
+def delete_todo(todo_id: int, user: UserDep) -> Response:
+    # Deleting is owned by the Rust worker; it deletes only rows owned by `user`.
+    try:
+        res = httpx.delete(
+            f"{WORKER_URL}/todos/{todo_id}",
+            headers={"X-User-Id": user},
+            timeout=3.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Worker unavailable") from exc
+    if res.status_code == status.HTTP_404_NOT_FOUND:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Todo not found")
+    if res.status_code != status.HTTP_204_NO_CONTENT:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Worker failed to delete todo")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
