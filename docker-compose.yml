@@ -1,0 +1,74 @@
+name: todo-app
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-todo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-todo}
+      POSTGRES_DB: ${POSTGRES_DB:-todo}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  middleware:
+    build: ./middleware
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-todo}:${POSTGRES_PASSWORD:-todo}@db:5432/${POSTGRES_DB:-todo}
+      # Reject requests that did not come through oauth2-proxy with an identity.
+      REQUIRE_AUTH: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published to the host: only reachable from the frontend on the internal network.
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      API_URL: http://middleware:8000
+    # Not published to the host: all traffic must pass through oauth2-proxy.
+    depends_on:
+      middleware:
+        condition: service_healthy
+    restart: unless-stopped
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    environment:
+      OAUTH2_PROXY_PROVIDER: ${OAUTH2_PROVIDER:-github}
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_CLIENT_ID:?set OAUTH2_CLIENT_ID in .env}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_CLIENT_SECRET:?set OAUTH2_CLIENT_SECRET in .env}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_COOKIE_SECRET:?set OAUTH2_COOKIE_SECRET in .env}
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${APP_PORT:-4180}/oauth2/callback
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://frontend:3000
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${OAUTH2_EMAIL_DOMAINS:-*}
+      # Plain http on localhost; set to true behind TLS.
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      # Go straight to the provider instead of showing a "Sign in with..." page.
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # API calls get 401 instead of a login redirect; the UI handles it.
+      OAUTH2_PROXY_API_ROUTES: ^/api/
+      # Public without login: the landing page and its static assets.
+      # Everything else (/todos, /api/*) still requires a GitHub sign-in.
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: GET=^/$$,GET=^/_next/,GET=^/favicon\.ico$$
+    ports:
+      - "${APP_PORT:-4180}:4180"
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  db-data:
