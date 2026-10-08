@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CodeDeploy ApplicationStart: (re)create containers whose image or config changed.
+# CodeDeploy ApplicationStart: rebuild images and recreate changed containers.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
-log "starting release $(grep '^RELEASE=' "$ENV_FILE" | cut -d= -f2)"
-compose up -d --remove-orphans
+log "building and starting $(git -C "$REPO_DIR" log -1 --format=%h)"
+compose up -d --build --remove-orphans

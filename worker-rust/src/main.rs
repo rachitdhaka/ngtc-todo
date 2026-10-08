@@ -110,9 +110,8 @@ fn healthcheck() -> bool {
     let probe = || -> std::io::Result<bool> {
         let mut stream = TcpStream::connect(("127.0.0.1", port()))?;
         stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-        stream.write_all(
-            b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )?;
+        stream
+            .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")?;
         let mut response = String::new();
         stream.read_to_string(&mut response)?;
         Ok(response.starts_with("HTTP/1.1 200"))

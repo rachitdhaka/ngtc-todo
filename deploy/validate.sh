@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # CodeDeploy ValidateService: the release must become healthy within ~3 minutes.
-# A non-zero exit fails the deployment, and CodeDeploy rolls back to the last
-# good revision (when automatic rollback is enabled on the deployment group).
+# A non-zero exit marks the deployment (and the pipeline run) as failed.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 
@@ -23,12 +22,6 @@ for attempt in $(seq 1 36); do
     && [ "$(status_of /)" = 200 ] \
     && [ "$(status_of /api/todos)" = 401 ]; then
     log "release is healthy (attempt $attempt)"
-
-    # Keep the 3 most recent releases of each image for quick manual rollback.
-    for repo in ngtc-todo/frontend ngtc-todo/middleware ngtc-todo/worker; do
-      docker images "$repo" --format '{{.Tag}}' | tail -n +4 \
-        | xargs -r -I{} docker rmi "$repo:{}" >/dev/null 2>&1 || true
-    done
     docker image prune -f >/dev/null
     exit 0
   fi

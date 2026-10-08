@@ -1,7 +1,8 @@
 # CodeBuild project: ngtc-todo-build   (pipeline stage: Build)
 #
 # Lints and unit-tests every service, proves each Docker image builds, and
-# outputs the deployable bundle (BuildArtifact) used by the Deploy stage.
+# outputs a small bundle (BuildArtifact) for the Deploy stage: the tested
+# commit SHA plus the CodeDeploy scripts. The server pulls the code via git.
 #
 # Requires: privileged mode ON (Docker). Every tool runs inside its official
 # Docker image, so nothing has to be installed on the build host. Sources are
@@ -44,25 +45,13 @@ phases:
 
   post_build:
     commands:
-      # Record which commit this bundle is, so the server can tag images with it.
-      - echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-unknown}" | cut -c1-7 > RELEASE
+      # The exact commit that passed; the server's git clone is moved to it.
+      - test -n "$CODEBUILD_RESOLVED_SOURCE_VERSION"
+      - echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" > RELEASE
       - echo "Release $(cat RELEASE)"
 
 artifacts:
-  # Only what the EC2 server needs to build and run the app.
   files:
     - RELEASE
     - appspec.yml
-    - docker-compose.yml
-    - docker-compose.prod.yml
     - deploy/**/*
-    - db/**/*
-    - middleware/**/*
-    - frontend/**/*
-    - worker-rust/**/*
-  exclude-paths:
-    - middleware/tests/**/*
-    - "**/node_modules/**/*"
-    - "**/.next/**/*"
-    - "**/target/**/*"
-    - "**/.venv/**/*"

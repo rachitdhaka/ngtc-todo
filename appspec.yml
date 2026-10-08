@@ -1,32 +1,30 @@
 # CodeDeploy (EC2) - pipeline stage: Deploy
 #
-# Copies the build bundle to /opt/ngtc-todo/app, then runs the lifecycle hooks:
-#   BeforeInstall    check Docker/AWS CLI are present, clear the old bundle
-#   AfterInstall     load secrets from SSM Parameter Store, build images
-#   ApplicationStart docker compose up -d
-#   ValidateService  wait until healthy; a failure here triggers rollback
+# The server keeps a git clone of the repo at /home/ubuntu/ngtc-todo, with its
+# own .env (secrets, never in git). Each deployment moves that clone to the
+# exact commit that passed the Build and Test stages, then rebuilds and restarts:
+#   AfterInstall     deploy/update.sh    git fetch + fast-forward to the tested commit
+#   ApplicationStart deploy/start.sh     docker compose up -d --build
+#   ValidateService  deploy/validate.sh  wait until healthy, else fail the deployment
 version: 0.0
 os: linux
 
 files:
-  - source: /
-    destination: /opt/ngtc-todo/app
+  # Only the release marker is copied; the code comes from the git clone.
+  - source: RELEASE
+    destination: /opt/ngtc-todo
 file_exists_behavior: OVERWRITE
 
 hooks:
-  BeforeInstall:
-    - location: deploy/before_install.sh
-      timeout: 300
-      runas: root
   AfterInstall:
-    - location: deploy/after_install.sh
-      timeout: 1800
-      runas: root
+    - location: deploy/update.sh
+      timeout: 300
+      runas: ubuntu
   ApplicationStart:
     - location: deploy/start.sh
-      timeout: 600
-      runas: root
+      timeout: 1800
+      runas: ubuntu
   ValidateService:
     - location: deploy/validate.sh
       timeout: 300
-      runas: root
+      runas: ubuntu
